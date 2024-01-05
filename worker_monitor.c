@@ -7,51 +7,72 @@
 #include <sys/stat.h>
 #include <errno.h>
 #include <pthread.h>
+#include <signal.h>
+
 
 #define NO_OF_WORKERS 4
-#define STARTUP_MESSAGE "=-=-=-= Worker Monitor =-=-=-=\n"
+#define STARTUP_MESSAGE "=-=-=-= Worker Monitor =-=-=-=\nPlease launch all workers before proceeding.\n"
 
 char *g_worker_fifos[] = {"/tmp/adder","/tmp/subtractor","/tmp/multiplier","/tmp/divider"};
 char *g_worker_names[] = {"adder", "subtractor", "multiplier", "divider"};
 char *g_worker_operation_signs[] = {"+","-","*","/"};
 pthread_t g_thread_ids[NO_OF_WORKERS];
+int g_file_descriptors[NO_OF_WORKERS];
 pthread_mutex_t g_lock;
 
 void createThread(int worker_no);
 void joinThread(int worker_no);
 void *monitorWorker(void *worker_no_ptr);
-int readFromPipe(const char *prog_name, const char *fifo);
-//void ensureNoDivisionByZero(int *user_input, int operation_num);
+int readNumberFromPipe(const char *prog_name, const char *fifo);
+int* readArrayFromPipe(const char *prog_name, const char *fifo);
+int readFromPipe(int worker_no);
+//void ensureNoDivisionByZero(int *user_input, int worker_no);
 void handleError(const char *prompt1, const char *prompt2);
-void initPipe(int operation_num);
-void clearFifo(const char *fifo);
+void initPipe(int worker_no);
+void handle_sigint(int sig);
 
 
 // main function
 int main(){
 
+    // temination signal handler
+    signal(SIGINT, handle_sigint);
+
     printf(STARTUP_MESSAGE);
-    printf("Waiting for workers...\n");
 
     pthread_mutex_init(&g_lock, NULL);
 
-    for (int i = 0; i < 2; i++){
-        initPipe(i);
-        createThread(i);
+    for (int i = 0; i < NO_OF_WORKERS; i++){
+        int worker_no = i;
+        initPipe(worker_no);
     }
 
-    for (int i = 0; i < 2; i++){
-        joinThread(i);
+    for (int i = 0; i < NO_OF_WORKERS; i++){
+        int worker_no = i;
+        printf("in for loop, worker no = %d\n",worker_no);
+        createThread(worker_no);
+    }
+    
+    printf("Waiting for workers...\n");
+
+    for(int i = 0; i < NO_OF_WORKERS; i++){
+        int worker_no = i;
+        joinThread(worker_no);
     }
 
     pthread_mutex_destroy(&g_lock);
 
-    
     return 0;
 }
 
 void createThread(int worker_no){
-    pthread_create(&g_thread_ids[worker_no], NULL, monitorWorker, &worker_no);
+    printf("in create thread,     worker no = %d\n",worker_no);
+
+    void *ptr = malloc(sizeof(int));
+    *((int*)ptr) = worker_no;
+
+    pthread_create(&g_thread_ids[worker_no], NULL, monitorWorker, ptr);
+    //printf("AFTER CREATE THREAD: threadid=%lu, worker_no=%d\n",g_thread_ids[worker_no],worker_no);
 }
 
 void joinThread(int worker_no){
@@ -59,92 +80,113 @@ void joinThread(int worker_no){
 }
 
 void *monitorWorker(void *worker_no_ptr){
-    int input1, input2, result;
 
     int *worker_no_int_ptr = (int*)worker_no_ptr;
+
     int worker_no = *worker_no_int_ptr;
-    
+
+    printf("in monitor worker,                worker no = %d\n",worker_no);
+
+    char *worker_name = g_worker_names[worker_no];
+    char *worker_fifo = g_worker_fifos[worker_no];
+    char *worker_operation_sign = g_worker_operation_signs[worker_no];
+
+    //printf("\nBEFORE WHILE LOOP: threadid=%lu, worker_no=%d\n",g_thread_ids[worker_no],worker_no);
 
     while (1){
 
-        input1 = readFromPipe(g_worker_names[worker_no], g_worker_fifos[worker_no]);
-        printf("%s:\n%d\n%s\n", g_worker_names[worker_no], input1, g_worker_operation_signs[worker_no]);
+        int input1;
+        input1 = readFromPipe(worker_no);
+        
+        usleep(10000);
 
-        //pthread_mutex_lock(&g_lock);
+        pthread_mutex_lock(&g_lock);
 
-        input2 = readFromPipe(g_worker_names[worker_no], g_worker_fifos[worker_no]);
-        result = readFromPipe(g_worker_names[worker_no], g_worker_fifos[worker_no]);
+        printf("%s:\n%d\n%s\n", worker_name, input1, worker_operation_sign);
+        fflush(stdout);
 
-        printf("%d\n=\n%d\n", input2, result);
+        usleep(10000);
+
+        int input2;
+        //printf("what should be input2 = %d\n", readFromPipe(worker_no));
+
+        input2 = readFromPipe(worker_no);
+        printf("%d\n",input2);
+        fflush(stdout);
+
+        //test
+        usleep(10000);
+        //test
+
+        int result;
+        //printf("what should be result = %d\n", readFromPipe(worker_no));
+
+        result = readFromPipe(worker_no);
+        printf("=\n%d\n",result);
+        fflush(stdout);
+
         printf("Waiting for workers...\n");
+        fflush(stdout);
 
-        //pthread_mutex_unlock(&g_lock);
+        pthread_mutex_unlock(&g_lock);
+
     }
     
 }
 
 // initializes the FIFO of specified operation number
-void initPipe(int operation_num){
+void initPipe(int worker_no){
 
-    // return function if FIFO file exists
-    if(access(g_worker_fifos[operation_num], F_OK) != -1){
-        return;
+    // delete FIFO if it exists
+    if(access(g_worker_fifos[worker_no], F_OK) != -1){
+        if (unlink(g_worker_fifos[worker_no]) == -1) {
+            handleError("unlink in ", g_worker_names[worker_no]);
+        }
     }
 
-    // create FIFO if it doesn't exists
-    if(mkfifo(g_worker_fifos[operation_num], 0666) == -1){
+    // create FIFO
+    if(mkfifo(g_worker_fifos[worker_no], 0666) == -1){
 
         // error handling
-        handleError("mkfifo in ", g_worker_names[operation_num]);
+        handleError("mkfifo in ", g_worker_names[worker_no]);
     }
-}
-
-// // ensures the second user input is not zero
-// void ensureNoDivisionByZero(int *user_input, int operation_num){
-//     // checks for division by zero
-//     while(1){
-//         if(operation_num == 3 && user_input[1] == 0){
-//             printf("You cannot divide by zero! Please enter a non-zero value.\n\n");
-//             user_input[1] = get1UserInput("Input 2: ");
-//         } else {
-//             break;
-//         }
-//     }
-// }
-
-// reads from specified pipe
-int readFromPipe(const char *prog_name, const char *fifo){
-    int fd;
-    int buffer;
 
     // open fifo for reading
-    fd = open(fifo, O_RDONLY);
+    int fd;
+    fd = open(g_worker_fifos[worker_no], O_RDONLY);
     if(fd == -1){
 
         // error handling
-        handleError("opening fifo in ", prog_name);
+        handleError("opening fifo in ", g_worker_names[worker_no]);
     }
 
-    // read from fifo
-    if(read(fd, &buffer, sizeof(int)) == -1){
 
-        // error handling
-        handleError("reading fifo in ", prog_name);
-    }
-    
-    // close fifo
-    close(fd);
-
-    return buffer;
+    // store the file descriptor in the global variable
+    g_file_descriptors[worker_no] = fd;
 }
 
-void clearFifo(const char *fifo){
-    char buffer[256];
-    int fd = open(fifo, O_RDONLY | O_NONBLOCK);
-    while(read(fd, buffer, sizeof(buffer)) > 0) {
-        // continue reading until the pipe is empty
+// reads from specified pipe
+int readFromPipe(int worker_no){
+    int fd = g_file_descriptors[worker_no];
+    int buffer;
+
+//printf("before read in worker no %d\n",worker_no);
+    // read from fifo    
+    int read_return_val = read(fd, &buffer, sizeof(int));
+    if(read_return_val == -1){
+
+        // error handling
+        handleError("reading fifo in ", g_worker_names[worker_no]);
     }
-    close(fd);
+    printf("%s: ", g_worker_names[worker_no]);
+    fflush(stdout);
+    printf("read return value for number read func: %d\n", read_return_val);
+    fflush(stdout);
+    printf("buffer value: %d\n", buffer);
+    fflush(stdout);
+    
+
+    return buffer;
 }
 
 // prints error message with perror and combines 2 prompts to specify the location of the error, then exits the program
@@ -155,6 +197,18 @@ void handleError(const char *prompt1, const char *prompt2){
         exit(EXIT_FAILURE); // returns 1
 }
 
+void handle_sigint(int sig) {
+    printf("termination signal\n");
+    fflush(stdout);
 
+    for(int i = 0; i < NO_OF_WORKERS; i++){
+        int worker_no = i;
+        close(g_file_descriptors[worker_no]);
+        unlink(g_worker_fifos[worker_no]);
+    }
+
+    pthread_mutex_destroy(&g_lock);
+    exit(0);
+}
 
 

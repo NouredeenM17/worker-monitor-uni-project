@@ -4,79 +4,79 @@
 #include <limits.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>
 
 #define STARTUP_MESSAGE "=-=-=-= Subtractor Program =-=-=-=\n"
 
 char *g_fifo = "/tmp/subtractor";
 char *g_prog_name = "subtractor";
+int g_fd;
 
-void sendInt(int output);
+void writeNumberToPipe(int output);
 int get1UserInput(const char* prompt);
-void setup();
+void checkMonitor();
 void handleError(const char *prompt1, const char *prompt2);
+void writeArrayToPipe(int sent1, int sent2);
+void writeToPipe(int sent);
 
 int main(int argc, char *argv[]){
     
     printf(STARTUP_MESSAGE);
 
-    setup();
+    checkMonitor();
 
     // main loop
     while (1){
         // gets input from user
         int input1 = get1UserInput("Input 1: ");
-        sendInt(input1);
+        //writeNumberToPipe(input1);
+        writeToPipe(input1);
 
         int input2 = get1UserInput("Input 2: ");
-        sendInt(input2);
 
         // performs the operation
         int result = input1 - input2;
-        printf("Result = %d", result);
+        printf("Result = %d\n\n", result);
 
         // writes result to FIFO
-        sendInt(result);
+        //writeArrayToPipe(input2, result);
+        writeToPipe(input2);
+        writeToPipe(result);
     }
     exit(EXIT_SUCCESS);
 }
 
-void setup(){
+void checkMonitor(){
 
-    // return function if FIFO file exists
-    if(access(g_fifo, F_OK) != -1){
-        remove(g_fifo);
-    }
+    // if monitor didn't open the FIFO, the program terminates
+    if(access(g_fifo, F_OK) == -1){
+        printf("Please launch the worker monitor first!\n");
+        exit(EXIT_SUCCESS);
+    } else {
+        // open fifo for writing
+        g_fd = open(g_fifo, O_WRONLY);
+        if(g_fd == -1){
 
-    // create FIFO if it doesn't exists
-    if(mkfifo(g_fifo, 0666) == -1){
-
-        // error handling
-        handleError("mkfifo in ", g_prog_name);
+            // error handling
+            handleError("opening fifo in ", g_prog_name);
+        }
     }
 }
 
 // writes output to pipe
-void sendInt(int output){
-    // open fifo
-    int fd;
-    fd = open(g_fifo, O_WRONLY);
-    if(fd == -1){
-        
-        // error handling
-        perror("opening fifo in adder subprogram");
-        exit(EXIT_FAILURE);
-    }
+void writeToPipe(int sent){
 
     // write result into fifo    
-    if(write(fd, &output, sizeof(int)) == -1){
+    int write_return_val = write(g_fd, &sent, sizeof(int));
+    if(write_return_val == -1){
 
         // error handling
-        perror("writing to fifo in adder subprogram");
+        perror("writing to fifo in subtractor subprogram");
         exit(EXIT_FAILURE);
     }
-    
-    // close fifo
-    close(fd);
+    printf("write return value for number write func: ");
+    printf("%d\n\n", write_return_val);
+    fflush(stdout);
 }
 
 // gets 1 user input with a prompt, and ensures it is an int

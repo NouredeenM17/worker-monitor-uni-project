@@ -4,81 +4,104 @@
 #include <limits.h>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <signal.h>
 
-int g_buffer[2];
-char *g_fifo;
+#define STARTUP_MESSAGE "=-=-=-= Multiplier Program =-=-=-=\n"
 
-void recieveInput();
-void sendOutput(int result);
+char *g_fifo = "/tmp/multiplier";
+char *g_prog_name = "multiplier";
+int g_fd;
+
+void writeNumberToPipe(int output);
+int get1UserInput(const char* prompt);
+void checkMonitor();
+void handleError(const char *prompt1, const char *prompt2);
+void writeArrayToPipe(int sent1, int sent2);
+void writeToPipe(int sent);
 
 int main(int argc, char *argv[]){
-    // get fifo from arguments
-    g_fifo = argv[1];
     
+    printf(STARTUP_MESSAGE);
+
+    checkMonitor();
+
     // main loop
     while (1){
-        int result;
+        // gets input from user
+        int input1 = get1UserInput("Input 1: ");
+        //writeNumberToPipe(input1);
+        writeToPipe(input1);
 
-        // reads input from FIFO
-        recieveInput();
-
-        // checks if the input is the exit signal
-        if(g_buffer[0] == INT_MIN && g_buffer[1] == INT_MIN){
-            break;
-        }
+        int input2 = get1UserInput("Input 2: ");
 
         // performs the operation
-        result = g_buffer[0] * g_buffer[1];
+        int result = input1 * input2;
+        printf("Result = %d\n\n", result);
 
         // writes result to FIFO
-        sendOutput(result);
+        //writeArrayToPipe(input2, result);
+        writeToPipe(input2);
+        writeToPipe(result);
     }
     exit(EXIT_SUCCESS);
 }
 
-// writes output to pipe
-void sendOutput(int result){
-    // open fifo
-    int fd;
-    fd = open(g_fifo, O_WRONLY);
-    if(fd == -1){
-        
-        // error handling
-        perror("opening fifo in adder subprogram");
-        exit(EXIT_FAILURE);
-    }
+void checkMonitor(){
 
-    // write result into fifo    
-    if(write(fd, &result, sizeof(int)) == -1){
+    // if monitor didn't open the FIFO, the program terminates
+    if(access(g_fifo, F_OK) == -1){
+        printf("Please launch the worker monitor first!\n");
+        exit(EXIT_SUCCESS);
+    } else {
+        // open fifo for writing
+        g_fd = open(g_fifo, O_WRONLY);
+        if(g_fd == -1){
 
-        // error handling
-        perror("writing to fifo in adder subprogram");
-        exit(EXIT_FAILURE);
+            // error handling
+            handleError("opening fifo in ", g_prog_name);
+        }
     }
-    
-    // close fifo
-    close(fd);
 }
 
-// reads input from pipe
-void recieveInput(){
-    // open fifo
-    int fd;
-    fd = open(g_fifo, O_RDONLY);
-    if(fd == -1){
+// writes output to pipe
+void writeToPipe(int sent){
+
+    // write result into fifo    
+    int write_return_val = write(g_fd, &sent, sizeof(int));
+    if(write_return_val == -1){
 
         // error handling
-        perror("fifo open error in adder subprogram");
+        perror("writing to fifo in multiplier subprogram");
         exit(EXIT_FAILURE);
     }
-    // read from fifo
-    if(read(fd, g_buffer, sizeof(g_buffer)) == -1){
+    printf("write return value for number write func: ");
+    printf("%d\n\n", write_return_val);
+    fflush(stdout);
+}
 
-        // error handling
-        perror("reading fifo in adder subprogram");
-        exit(EXIT_FAILURE);
+// gets 1 user input with a prompt, and ensures it is an int
+int get1UserInput(const char *prompt){
+    int result;
+
+    // gets valid input from user
+    while(1){
+        printf("%s", prompt);
+        if(scanf("%d", &result) == 0){
+            printf("Invalid input! Please enter an integer value.\n\n");
+            
+            // clear input buffer
+            while(getchar() != '\n');
+        } else {
+            break;
+        }
     }
+    return result;
+}
 
-    // close fifo
-    close(fd);
+// prints error message with perror and combines 2 prompts to specify the location of the error, then exits the program
+void handleError(const char *prompt1, const char *prompt2){
+        char err_msg[50];
+        sprintf(err_msg, "%s%s", prompt1, prompt2);
+        perror(err_msg);
+        exit(EXIT_FAILURE); // returns 1
 }
