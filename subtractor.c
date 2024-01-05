@@ -12,11 +12,9 @@ char *g_fifo = "/tmp/subtractor";
 char *g_prog_name = "subtractor";
 int g_fd;
 
-void writeNumberToPipe(int output);
 int get1UserInput(const char* prompt);
 void checkMonitor();
 void handleError(const char *prompt1, const char *prompt2);
-void writeArrayToPipe(int sent1, int sent2);
 void writeToPipe(int sent);
 
 int main(int argc, char *argv[]){
@@ -29,7 +27,6 @@ int main(int argc, char *argv[]){
     while (1){
         // gets input from user
         int input1 = get1UserInput("Input 1: ");
-        //writeNumberToPipe(input1);
         writeToPipe(input1);
 
         int input2 = get1UserInput("Input 2: ");
@@ -39,7 +36,6 @@ int main(int argc, char *argv[]){
         printf("Result = %d\n\n", result);
 
         // writes result to FIFO
-        //writeArrayToPipe(input2, result);
         writeToPipe(input2);
         writeToPipe(result);
     }
@@ -74,9 +70,6 @@ void writeToPipe(int sent){
         perror("writing to fifo in subtractor subprogram");
         exit(EXIT_FAILURE);
     }
-    printf("write return value for number write func: ");
-    printf("%d\n\n", write_return_val);
-    fflush(stdout);
 }
 
 // gets 1 user input with a prompt, and ensures it is an int

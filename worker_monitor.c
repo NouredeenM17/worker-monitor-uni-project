@@ -23,10 +23,7 @@ pthread_mutex_t g_lock;
 void createThread(int worker_no);
 void joinThread(int worker_no);
 void *monitorWorker(void *worker_no_ptr);
-int readNumberFromPipe(const char *prog_name, const char *fifo);
-int* readArrayFromPipe(const char *prog_name, const char *fifo);
 int readFromPipe(int worker_no);
-//void ensureNoDivisionByZero(int *user_input, int worker_no);
 void handleError(const char *prompt1, const char *prompt2);
 void initPipe(int worker_no);
 void handle_sigint(int sig);
@@ -49,7 +46,6 @@ int main(){
 
     for (int i = 0; i < NO_OF_WORKERS; i++){
         int worker_no = i;
-        printf("in for loop, worker no = %d\n",worker_no);
         createThread(worker_no);
     }
     
@@ -66,13 +62,11 @@ int main(){
 }
 
 void createThread(int worker_no){
-    printf("in create thread,     worker no = %d\n",worker_no);
 
     void *ptr = malloc(sizeof(int));
     *((int*)ptr) = worker_no;
 
     pthread_create(&g_thread_ids[worker_no], NULL, monitorWorker, ptr);
-    //printf("AFTER CREATE THREAD: threadid=%lu, worker_no=%d\n",g_thread_ids[worker_no],worker_no);
 }
 
 void joinThread(int worker_no){
@@ -82,45 +76,30 @@ void joinThread(int worker_no){
 void *monitorWorker(void *worker_no_ptr){
 
     int *worker_no_int_ptr = (int*)worker_no_ptr;
-
     int worker_no = *worker_no_int_ptr;
 
-    printf("in monitor worker,                worker no = %d\n",worker_no);
+    free(worker_no_ptr);
 
     char *worker_name = g_worker_names[worker_no];
     char *worker_fifo = g_worker_fifos[worker_no];
     char *worker_operation_sign = g_worker_operation_signs[worker_no];
 
-    //printf("\nBEFORE WHILE LOOP: threadid=%lu, worker_no=%d\n",g_thread_ids[worker_no],worker_no);
-
     while (1){
 
         int input1;
         input1 = readFromPipe(worker_no);
-        
-        usleep(10000);
 
         pthread_mutex_lock(&g_lock);
 
         printf("%s:\n%d\n%s\n", worker_name, input1, worker_operation_sign);
         fflush(stdout);
 
-        usleep(10000);
-
         int input2;
-        //printf("what should be input2 = %d\n", readFromPipe(worker_no));
-
         input2 = readFromPipe(worker_no);
         printf("%d\n",input2);
         fflush(stdout);
 
-        //test
-        usleep(10000);
-        //test
-
         int result;
-        //printf("what should be result = %d\n", readFromPipe(worker_no));
-
         result = readFromPipe(worker_no);
         printf("=\n%d\n",result);
         fflush(stdout);
@@ -134,7 +113,7 @@ void *monitorWorker(void *worker_no_ptr){
     
 }
 
-// initializes the FIFO of specified operation number
+// initializes the FIFO of specified worker number
 void initPipe(int worker_no){
 
     // delete FIFO if it exists
@@ -170,7 +149,6 @@ int readFromPipe(int worker_no){
     int fd = g_file_descriptors[worker_no];
     int buffer;
 
-//printf("before read in worker no %d\n",worker_no);
     // read from fifo    
     int read_return_val = read(fd, &buffer, sizeof(int));
     if(read_return_val == -1){
@@ -178,13 +156,6 @@ int readFromPipe(int worker_no){
         // error handling
         handleError("reading fifo in ", g_worker_names[worker_no]);
     }
-    printf("%s: ", g_worker_names[worker_no]);
-    fflush(stdout);
-    printf("read return value for number read func: %d\n", read_return_val);
-    fflush(stdout);
-    printf("buffer value: %d\n", buffer);
-    fflush(stdout);
-    
 
     return buffer;
 }

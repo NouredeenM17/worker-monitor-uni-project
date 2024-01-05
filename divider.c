@@ -12,7 +12,6 @@ char *g_fifo = "/tmp/divider";
 char *g_prog_name = "divider";
 int g_fd;
 
-void writeNumberToPipe(int output);
 int get1UserInput(const char* prompt);
 void checkMonitor();
 void handleError(const char *prompt1, const char *prompt2);
@@ -73,9 +72,6 @@ void writeToPipe(int sent){
         perror("writing to fifo in divider subprogram");
         exit(EXIT_FAILURE);
     }
-    printf("write return value for number write func: ");
-    printf("%d\n\n", write_return_val);
-    fflush(stdout);
 }
 
 // gets 1 user input with a prompt, and ensures it is an int
